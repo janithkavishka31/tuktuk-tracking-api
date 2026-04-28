@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Province {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  districts District[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model District {
+  id             String           @id @default(cuid())
+  name           String
+  provinceId     String
+  province       Province         @relation(fields: [provinceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  policeStations PoliceStation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provinceId, name])
+  @@index([provinceId])
+}
+
+model PoliceStation {
+  id         String   @id @default(cuid())
+  name       String
+  districtId String
+  district    District @relation(fields: [districtId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([districtId, name])
+  @@index([districtId])
+}
