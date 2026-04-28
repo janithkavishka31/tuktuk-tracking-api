@@ -4,12 +4,14 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const statusRoutes = require('./src/routes/statusRoutes');
+const authRoutes = require('./src/routes/authRoutes');
 
 const app = express();
 
 app.use(express.json());
 
 app.use('/api', statusRoutes);
+app.use('/auth', authRoutes);
 
 const port = process.env.PORT || 3000;
 

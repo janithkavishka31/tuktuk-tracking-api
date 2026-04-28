@@ -1,1 +1,3 @@
-module.exports = {};
+module.exports = {
+	prisma: require('./prisma'),
+};
