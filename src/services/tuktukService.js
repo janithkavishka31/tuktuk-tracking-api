@@ -1,52 +1,82 @@
 const prisma = require('../config/prisma');
+const { andWhere, tukTukWhereForUser } = require('../utils/scope');
 
 function parsePositiveInt(value, fallback) {
   const parsed = parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function buildTrackingFilter({ provinceId, districtId }) {
-  const where = {};
-
-  if (provinceId) {
-    where.policeStation = {
-      district: {
-        provinceId,
+async function assertTukTukInScope(user, id) {
+  const scope = tukTukWhereForUser(user);
+  const tuk = await prisma.tukTuk.findFirst({
+    where: andWhere(scope, { id }),
+    include: {
+      policeStation: {
+        include: {
+          district: {
+            include: {
+              province: true,
+            },
+          },
+        },
       },
-    };
+      locations: {
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      },
+    },
+  });
+
+  if (!tuk) {
+    const error = new Error('TukTuk not found');
+    error.statusCode = 404;
+    throw error;
   }
 
-  if (districtId) {
-    where.policeStation = {
-      ...(where.policeStation || {}),
-      districtId,
-    };
-  }
-
-  return where;
+  return tuk;
 }
 
-async function createTukTuk({ registrationNo, policeStationId }) {
+function scopedPoliceStationFilter(user) {
+  switch (user.role) {
+    case 'SUPER_ADMIN':
+      return {};
+    case 'PROVINCE_ADMIN':
+      return { district: { provinceId: user.provinceId } };
+    case 'DISTRICT_ADMIN':
+      return { districtId: user.districtId };
+    case 'STATION_ADMIN':
+      return { id: user.stationId };
+    default:
+      return { id: '__none__' };
+  }
+}
+
+async function findPoliceStationInScope(user, policeStationId) {
+  return prisma.policeStation.findFirst({
+    where: {
+      id: policeStationId,
+      ...scopedPoliceStationFilter(user),
+    },
+  });
+}
+
+async function createTukTuk(user, { registrationNo, policeStationId }) {
   if (!registrationNo || !policeStationId) {
     const error = new Error('registrationNo and policeStationId are required');
     error.statusCode = 400;
     throw error;
   }
 
-  // Check if police station exists
-  const policeStation = await prisma.policeStation.findUnique({
-    where: { id: policeStationId },
-  });
+  const stationInScope = await findPoliceStationInScope(user, policeStationId);
 
-  if (!policeStation) {
-    const error = new Error('Police station not found');
+  if (!stationInScope) {
+    const error = new Error('Police station not found or outside your scope');
     error.statusCode = 404;
     throw error;
   }
 
-  // Check if registration number already exists
   const existingTukTuk = await prisma.tukTuk.findUnique({
-    where: { registrationNo },
+    where: { registrationNo: String(registrationNo).trim().toUpperCase() },
   });
 
   if (existingTukTuk) {
@@ -73,14 +103,14 @@ async function createTukTuk({ registrationNo, policeStationId }) {
     },
   });
 
-  return mapTukTuk(tukTuk);
+  return mapTukTuk({ ...tukTuk, locations: [] });
 }
 
-async function getAllTukTuks({ page = 1, limit = 20, provinceId, districtId } = {}) {
+async function getAllTukTuks(user, { page = 1, limit = 20 } = {}) {
   const currentPage = parsePositiveInt(page, 1);
   const pageSize = Math.min(parsePositiveInt(limit, 20), 100);
   const skip = (currentPage - 1) * pageSize;
-  const where = buildTrackingFilter({ provinceId, districtId });
+  const where = tukTukWhereForUser(user);
 
   const [total, tuktuks] = await Promise.all([
     prisma.tukTuk.count({ where }),
@@ -118,15 +148,57 @@ async function getAllTukTuks({ page = 1, limit = 20, provinceId, districtId } = 
   };
 }
 
-async function getTukTukById(id) {
-  if (!id) {
-    const error = new Error('TukTuk ID is required');
+async function getTukTukById(user, id) {
+  const tukTuk = await assertTukTukInScope(user, id);
+  return mapTukTuk(tukTuk);
+}
+
+async function updateTukTuk(user, id, { registrationNo, policeStationId }) {
+  const existing = await assertTukTukInScope(user, id);
+
+  if (policeStationId && policeStationId !== existing.policeStationId) {
+    const stationInScope = await findPoliceStationInScope(user, policeStationId);
+
+    if (!stationInScope) {
+      const error = new Error('Police station not found or outside your scope');
+      error.statusCode = 404;
+      throw error;
+    }
+  }
+
+  const data = {};
+
+  if (registrationNo !== undefined) {
+    const normalized = String(registrationNo).trim().toUpperCase();
+
+    if (normalized !== existing.registrationNo) {
+      const clash = await prisma.tukTuk.findUnique({
+        where: { registrationNo: normalized },
+      });
+
+      if (clash) {
+        const error = new Error('TukTuk with this registration number already exists');
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
+    data.registrationNo = normalized;
+  }
+
+  if (policeStationId !== undefined) {
+    data.policeStationId = policeStationId;
+  }
+
+  if (!Object.keys(data).length) {
+    const error = new Error('No updatable fields provided');
     error.statusCode = 400;
     throw error;
   }
 
-  const tukTuk = await prisma.tukTuk.findUnique({
+  const tukTuk = await prisma.tukTuk.update({
     where: { id },
+    data,
     include: {
       policeStation: {
         include: {
@@ -139,35 +211,35 @@ async function getTukTukById(id) {
       },
       locations: {
         orderBy: { createdAt: 'desc' },
-        take: 10,
+        take: 1,
       },
     },
   });
 
-  if (!tukTuk) {
-    const error = new Error('TukTuk not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
   return mapTukTuk(tukTuk);
 }
 
+async function deleteTukTuk(user, id) {
+  await assertTukTukInScope(user, id);
+  await prisma.tukTuk.delete({ where: { id } });
+  return { id };
+}
+
 function mapTukTuk(tukTuk) {
-  const lastLocation = tukTuk.locations?.[0] || null;
+  const lastLocation = tuktTuk.locations?.[0] || null;
 
   return {
     id: tukTuk.id,
     registrationNo: tukTuk.registrationNo,
-    policeStation: tukTuk.policeStation
+    policeStation: tuktTuk.policeStation
       ? {
           id: tukTuk.policeStation.id,
           name: tukTuk.policeStation.name,
-          district: tukTuk.policeStation.district
+          district: tuktTuk.policeStation.district
             ? {
                 id: tukTuk.policeStation.district.id,
                 name: tukTuk.policeStation.district.name,
-                province: tukTuk.policeStation.district.province
+                province: tuktTuk.policeStation.district.province
                   ? {
                       id: tukTuk.policeStation.district.province.id,
                       name: tukTuk.policeStation.district.province.name,
@@ -196,7 +268,9 @@ function mapTukTuk(tukTuk) {
 
 module.exports = {
   createTukTuk,
+  deleteTukTuk,
   getAllTukTuks,
   getTukTukById,
   mapTukTuk,
+  updateTukTuk,
 };

@@ -21,34 +21,50 @@ function mapPoliceStation(station) {
   };
 }
 
-async function getScopedPoliceStationIdForUser(user) {
-  if (!user || user.role !== 'POLICE') {
-    return null;
+function listWhereForUser(user) {
+  if (!user) {
+    return { id: '__none__' };
   }
 
-  if (user.policeStationId) {
-    return user.policeStationId;
+  switch (user.role) {
+    case 'SUPER_ADMIN':
+      return {};
+    case 'PROVINCE_ADMIN':
+      if (!user.provinceId) {
+        return { id: '__none__' };
+      }
+      return { district: { provinceId: user.provinceId } };
+    case 'DISTRICT_ADMIN':
+      if (!user.districtId) {
+        return { id: '__none__' };
+      }
+      return { districtId: user.districtId };
+    case 'STATION_ADMIN':
+      if (!user.stationId) {
+        return { id: '__none__' };
+      }
+      return { id: user.stationId };
+    case 'POLICE':
+      if (user.stationId) {
+        return { id: user.stationId };
+      }
+      if (user.districtId) {
+        return { districtId: user.districtId };
+      }
+      if (user.provinceId) {
+        return { district: { provinceId: user.provinceId } };
+      }
+      return { id: '__none__' };
+    default:
+      return { id: '__none__' };
   }
-
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { policeStationId: true },
-  });
-
-  if (!dbUser || !dbUser.policeStationId) {
-    const error = new Error('Police user is not assigned to a station');
-    error.statusCode = 403;
-    throw error;
-  }
-
-  return dbUser.policeStationId;
 }
 
 async function getPoliceStations(user) {
-  const scopedStationId = await getScopedPoliceStationIdForUser(user);
+  const where = listWhereForUser(user);
 
   const stations = await prisma.policeStation.findMany({
-    where: scopedStationId ? { id: scopedStationId } : undefined,
+    where,
     include: {
       district: {
         include: {
@@ -69,16 +85,11 @@ async function getPoliceStationById(id, user) {
     throw error;
   }
 
-  const scopedStationId = await getScopedPoliceStationIdForUser(user);
-
-  if (scopedStationId && scopedStationId !== id) {
-    const error = new Error('Forbidden: POLICE can only access their own station');
-    error.statusCode = 403;
-    throw error;
-  }
-
-  const station = await prisma.policeStation.findUnique({
-    where: { id },
+  const station = await prisma.policeStation.findFirst({
+    where: {
+      id,
+      ...listWhereForUser(user),
+    },
     include: {
       district: {
         include: {
@@ -129,18 +140,10 @@ async function createPoliceStation({ name, districtId }) {
   return mapPoliceStation(station);
 }
 
-async function updatePoliceStation(id, payload, user) {
+async function updatePoliceStation(id, payload) {
   if (!id) {
     const error = new Error('Police station id is required');
     error.statusCode = 400;
-    throw error;
-  }
-
-  const scopedStationId = await getScopedPoliceStationIdForUser(user);
-
-  if (scopedStationId && scopedStationId !== id) {
-    const error = new Error('Forbidden: POLICE can only update their own station');
-    error.statusCode = 403;
     throw error;
   }
 
@@ -206,9 +209,9 @@ async function deletePoliceStation(id) {
 }
 
 module.exports = {
-  getPoliceStations,
-  getPoliceStationById,
   createPoliceStation,
-  updatePoliceStation,
   deletePoliceStation,
+  getPoliceStationById,
+  getPoliceStations,
+  updatePoliceStation,
 };

@@ -1,54 +1,79 @@
 const prisma = require('../config/prisma');
+const { andWhere, tukTukWhereForUser } = require('../utils/scope');
 
 function parsePositiveInt(value, fallback) {
   const parsed = parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function buildLocationFilter({ tuktukId, provinceId, districtId, hours }) {
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-  const where = {
-    createdAt: { gte: since },
-  };
-
-  if (tuktukId) {
-    where.tuktukId = tuktukId;
+function parseDate(value, label) {
+  if (!value) {
+    return null;
   }
 
-  if (provinceId || districtId) {
-    where.tuktuk = {
-      policeStation: {
-        ...(provinceId ? { district: { provinceId } } : {}),
-        ...(districtId ? { districtId } : {}),
-      },
-    };
+  const d = new Date(value);
+
+  if (Number.isNaN(d.getTime())) {
+    const error = new Error(`${label} must be a valid ISO date`);
+    error.statusCode = 400;
+    throw error;
   }
 
-  return { where, since };
+  return d;
 }
 
-async function addLocation({
-  tuktukId,
-  latitude,
-  longitude,
-  speed = 0,
-  heading = 0,
-  accuracy = 0,
-  altitude = 0,
-}) {
-  if (
-    !tuktukId ||
-    latitude === null ||
-    latitude === undefined ||
-    longitude === null ||
-    longitude === undefined
-  ) {
+function buildHistoryWhere({ scope, tuktukId, from, to }) {
+  const tuktukFilter = {};
+
+  if (tuktukId) {
+    tuktukFilter.tuktukId = tuktukId;
+  }
+
+  const timeFilter = {};
+
+  if (from || to) {
+    timeFilter.createdAt = {};
+
+    if (from) {
+      timeFilter.createdAt.gte = from;
+    }
+
+    if (to) {
+      timeFilter.createdAt.lte = to;
+    }
+  }
+
+  const tuktukScope = scope && Object.keys(scope).length ? { tuktuk: scope } : {};
+
+  return andWhere(tuktukScope, {
+    ...tuktukFilter,
+    ...timeFilter,
+  });
+}
+
+async function addLocationForDevice(device, body) {
+  const {
+    tuktukId,
+    latitude,
+    longitude,
+    speed = 0,
+    heading = 0,
+    accuracy = 0,
+    altitude = 0,
+  } = body;
+
+  if (!tuktukId || latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
     const error = new Error('tuktukId, latitude, and longitude are required');
     error.statusCode = 400;
     throw error;
   }
 
-  // Validate coordinates
+  if (tuktukId !== device.tuktukId) {
+    const error = new Error('tuktukId does not match this device');
+    error.statusCode = 403;
+    throw error;
+  }
+
   if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
     const error = new Error(
       'Invalid coordinates: latitude must be -90 to 90, longitude -180 to 180',
@@ -57,7 +82,6 @@ async function addLocation({
     throw error;
   }
 
-  // Check if TukTuk exists
   const tukTuk = await prisma.tukTuk.findUnique({
     where: { id: tuktukId },
   });
@@ -83,109 +107,21 @@ async function addLocation({
   return mapLocation(location);
 }
 
-async function getLastLocationForTukTuk({ tuktukId, provinceId, districtId }) {
-  if (!tuktukId && !provinceId && !districtId) {
-    const error = new Error('tuktukId is required');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const location = await prisma.location.findFirst({
-    where: {
-      ...(tuktukId ? { tuktukId } : {}),
-      ...(provinceId || districtId
-        ? {
-            tuktuk: {
-              policeStation: {
-                ...(provinceId ? { district: { provinceId } } : {}),
-                ...(districtId ? { districtId } : {}),
-              },
-            },
-          }
-        : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  if (!location) {
-    const error = new Error('No location found for this TukTuk');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  return mapLocation(location);
-}
-
-async function getLocationHistory({
-  tuktukId,
-  provinceId,
-  districtId,
-  hours = 24,
-  page = 1,
-  limit = 20,
-}) {
-  if (!tuktukId && !provinceId && !districtId) {
-    const error = new Error('tuktukId, provinceId, or districtId is required');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const currentPage = parsePositiveInt(page, 1);
-  const pageSize = Math.min(parsePositiveInt(limit, 20), 500);
-  const skip = (currentPage - 1) * pageSize;
-  const { where } = buildLocationFilter({ tuktukId, provinceId, districtId, hours });
-
-  const [total, locations] = await Promise.all([
-    prisma.location.count({ where }),
-    prisma.location.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: pageSize,
-    }),
-  ]);
-
-  return {
-    data: locations.map(mapLocation),
-    meta: {
-      page: currentPage,
-      limit: pageSize,
-      total,
-      totalPages: Math.max(Math.ceil(total / pageSize), 1),
-      hours,
-    },
-  };
-}
-
-async function getLiveLocations({ provinceId, districtId, page = 1, limit = 20 } = {}) {
+async function getLiveLocations({ user, scope: scopeOverride, page = 1, limit = 20, tuktukId } = {}) {
   const currentPage = parsePositiveInt(page, 1);
   const pageSize = Math.min(parsePositiveInt(limit, 20), 100);
   const skip = (currentPage - 1) * pageSize;
 
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const scope = scopeOverride ?? tukTukWhereForUser(user);
+  const where = andWhere(scope, tuktukId ? { id: tuktukId } : {});
 
-  const where = {
-    ...(provinceId || districtId
-      ? {
-          policeStation: {
-            ...(provinceId ? { district: { provinceId } } : {}),
-            ...(districtId ? { districtId } : {}),
-          },
-        }
-      : {}),
-    locations: {
-      some: {
-        createdAt: { gte: oneDayAgo },
-      },
-    },
-  };
-
-  const [total, lastLocations] = await Promise.all([
+  const [total, tuktuks] = await Promise.all([
     prisma.tukTuk.count({ where }),
     prisma.tukTuk.findMany({
       where,
       skip,
       take: pageSize,
+      orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
         registrationNo: true,
@@ -208,9 +144,6 @@ async function getLiveLocations({ provinceId, districtId, page = 1, limit = 20 }
           },
         },
         locations: {
-          where: {
-            createdAt: { gte: oneDayAgo },
-          },
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
@@ -219,11 +152,11 @@ async function getLiveLocations({ provinceId, districtId, page = 1, limit = 20 }
   ]);
 
   return {
-    data: lastLocations.map((tukTuk) => ({
+    data: tuktuks.map((tukTuk) => ({
       tuktukId: tukTuk.id,
       registrationNo: tukTuk.registrationNo,
       policeStation: tukTuk.policeStation,
-      location: mapLocation(tukTuk.locations[0]),
+      location: tukTuk.locations[0] ? mapLocation(tukTuk.locations[0]) : null,
     })),
     meta: {
       page: currentPage,
@@ -234,7 +167,86 @@ async function getLiveLocations({ provinceId, districtId, page = 1, limit = 20 }
   };
 }
 
+async function getLocationHistory({
+  user,
+  scope: scopeOverride,
+  tuktukId,
+  from,
+  to,
+  page = 1,
+  limit = 20,
+}) {
+  let fromDate = from ? parseDate(from, 'from') : null;
+  let toDate = to ? parseDate(to, 'to') : null;
+
+  if (!fromDate && !toDate) {
+    toDate = new Date();
+    fromDate = new Date(toDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+  }
+
+  if (fromDate && toDate && fromDate > toDate) {
+    const error = new Error('from must be before or equal to to');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const effectiveScope = scopeOverride ?? tukTukWhereForUser(user);
+
+  if (tuktukId) {
+    const allowed = await prisma.tukTuk.findFirst({
+      where: andWhere(effectiveScope, { id: tuktukId }),
+      select: { id: true },
+    });
+
+    if (!allowed) {
+      const error = new Error('TukTuk not found or outside your scope');
+      error.statusCode = 404;
+      throw error;
+    }
+  }
+
+  const currentPage = parsePositiveInt(page, 1);
+  const pageSize = Math.min(parsePositiveInt(limit, 20), 500);
+  const skip = (currentPage - 1) * pageSize;
+
+  const where = buildHistoryWhere({
+    scope: effectiveScope,
+    tuktukId,
+    from: fromDate,
+    to: toDate,
+  });
+
+  const [total, locations] = await Promise.all([
+    prisma.location.count({ where }),
+    prisma.location.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: pageSize,
+    }),
+  ]);
+
+  return {
+    data: locations.map(mapLocation),
+    meta: {
+      page: currentPage,
+      limit: pageSize,
+      total,
+      totalPages: Math.max(Math.ceil(total / pageSize), 1),
+      filters: {
+        tuktukId: tuktukId || null,
+        from: fromDate ? fromDate.toISOString() : null,
+        to: toDate ? toDate.toISOString() : null,
+      },
+    },
+  };
+}
+
 function mapLocation(location) {
+  if (!location) {
+    return null;
+  }
+
   return {
     id: location.id,
     tuktukId: location.tuktukId,
@@ -249,9 +261,8 @@ function mapLocation(location) {
 }
 
 module.exports = {
-  addLocation,
-  getLastLocationForTukTuk,
-  getLocationHistory,
+  addLocationForDevice,
   getLiveLocations,
+  getLocationHistory,
   mapLocation,
 };

@@ -2,20 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const prisma = require('../config/prisma');
-
-const ALLOWED_ROLES = ['ADMIN', 'POLICE'];
-
-function normalizeEmail(email) {
-  return String(email || '')
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeRole(role) {
-  return String(role || '')
-    .trim()
-    .toUpperCase();
-}
+const { mapPublicUser, normalizeEmail } = require('./userService');
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
@@ -34,90 +21,9 @@ function buildTokenPayload(user) {
     sub: user.id,
     email: user.email,
     role: user.role,
-    policeStationId: user.policeStationId || null,
-  };
-}
-
-function mapUser(user) {
-  return {
-    id: user.id,
-    fullName: user.fullName,
-    email: user.email,
-    role: user.role,
-    policeStationId: user.policeStationId || null,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
-  };
-}
-
-async function registerUser({ fullName, email, password, role, policeStationId }) {
-  if (!fullName || !email || !password || !role) {
-    const error = new Error('fullName, email, password, and role are required');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const normalizedEmail = normalizeEmail(email);
-  const normalizedRole = normalizeRole(role);
-
-  if (!ALLOWED_ROLES.includes(normalizedRole)) {
-    const error = new Error('role must be ADMIN or POLICE');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  let normalizedPoliceStationId = null;
-
-  if (normalizedRole === 'POLICE') {
-    if (!policeStationId) {
-      const error = new Error('policeStationId is required for POLICE users');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const station = await prisma.policeStation.findUnique({
-      where: { id: String(policeStationId).trim() },
-      select: { id: true },
-    });
-
-    if (!station) {
-      const error = new Error('Police station not found');
-      error.statusCode = 404;
-      throw error;
-    }
-
-    normalizedPoliceStationId = station.id;
-  }
-
-  const existingUser = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-  });
-
-  if (existingUser) {
-    const error = new Error('Email is already registered');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const passwordHash = await bcrypt.hash(password, 10);
-
-  const user = await prisma.user.create({
-    data: {
-      fullName: String(fullName).trim(),
-      email: normalizedEmail,
-      password: passwordHash,
-      role: normalizedRole,
-      policeStationId: normalizedPoliceStationId,
-    },
-  });
-
-  const token = jwt.sign(buildTokenPayload(user), getJwtSecret(), {
-    expiresIn: '7d',
-  });
-
-  return {
-    user: mapUser(user),
-    token,
+    provinceId: user.provinceId || null,
+    districtId: user.districtId || null,
+    stationId: user.stationId || null,
   };
 }
 
@@ -132,11 +38,13 @@ async function loginUser({ email, password }) {
     where: { email: normalizeEmail(email) },
     select: {
       id: true,
-      fullName: true,
+      name: true,
       email: true,
       password: true,
       role: true,
-      policeStationId: true,
+      provinceId: true,
+      districtId: true,
+      stationId: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -160,14 +68,16 @@ async function loginUser({ email, password }) {
     expiresIn: '7d',
   });
 
+  const { password: _pw, ...safe } = user;
+
   return {
-    user: mapUser(user),
+    user: mapPublicUser(safe),
     token,
   };
 }
 
 module.exports = {
+  buildTokenPayload,
   loginUser,
-  registerUser,
-  mapUser,
+  mapPublicUser,
 };

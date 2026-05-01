@@ -21,8 +21,12 @@ function authenticateToken(req, res, next) {
       id: decoded.sub,
       email: decoded.email,
       role: decoded.role,
-      policeStationId: decoded.policeStationId || null,
+      provinceId: decoded.provinceId ?? null,
+      districtId: decoded.districtId ?? null,
+      stationId: decoded.stationId ?? null,
     };
+
+    req.authContext = { type: 'user' };
 
     return next();
   } catch (error) {

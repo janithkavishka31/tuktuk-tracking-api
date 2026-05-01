@@ -3,7 +3,6 @@ const { body, param } = require('express-validator');
 
 const policeStationController = require('../controllers/policeStationController');
 const { authenticateToken, authorizeRoles } = require('../middleware/authMiddleware');
-const { mapJwtRoleToPermissions, authorizePermissions } = require('../middleware/authorize');
 const { validateRequest } = require('../middleware/validation');
 
 const router = express.Router();
@@ -34,11 +33,18 @@ const updatePoliceStationValidator = [
   validateRequest,
 ];
 
+const readerRoles = [
+  'SUPER_ADMIN',
+  'PROVINCE_ADMIN',
+  'DISTRICT_ADMIN',
+  'STATION_ADMIN',
+  'POLICE',
+];
+
 router.get(
   '/',
   authenticateToken,
-  mapJwtRoleToPermissions,
-  authorizePermissions('policeStation:read'),
+  authorizeRoles(...readerRoles),
   policeStationController.getPoliceStations,
 );
 
@@ -46,15 +52,14 @@ router.get(
   '/:id',
   stationIdParamValidator,
   authenticateToken,
-  mapJwtRoleToPermissions,
-  authorizePermissions('policeStation:read'),
+  authorizeRoles(...readerRoles),
   policeStationController.getPoliceStationById,
 );
 
 router.post(
   '/',
   authenticateToken,
-  authorizeRoles('ADMIN'),
+  authorizeRoles('SUPER_ADMIN'),
   createPoliceStationValidator,
   policeStationController.createPoliceStation,
 );
@@ -63,8 +68,7 @@ router.put(
   '/:id',
   stationIdParamValidator,
   authenticateToken,
-  mapJwtRoleToPermissions,
-  authorizePermissions('policeStation:update'),
+  authorizeRoles('SUPER_ADMIN'),
   updatePoliceStationValidator,
   policeStationController.updatePoliceStation,
 );
@@ -73,7 +77,7 @@ router.delete(
   '/:id',
   stationIdParamValidator,
   authenticateToken,
-  authorizeRoles('ADMIN'),
+  authorizeRoles('SUPER_ADMIN'),
   policeStationController.deletePoliceStation,
 );
 

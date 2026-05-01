@@ -47,7 +47,7 @@ async function createPoliceStation(req, res) {
 
 async function updatePoliceStation(req, res) {
   try {
-    const data = await policeStationService.updatePoliceStation(req.params.id, req.body, req.user);
+    const data = await policeStationService.updatePoliceStation(req.params.id, req.body);
     return res.status(200).json({
       message: 'Police station updated successfully',
       data,

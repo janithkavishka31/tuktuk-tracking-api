@@ -114,19 +114,19 @@ async function main() {
   const demoUsers = await Promise.all([
     prisma.user.create({
       data: {
-        fullName: 'System Admin',
+        name: 'System Admin',
         email: 'admin@example.com',
         password: await bcrypt.hash('Admin@123', 10),
-        role: 'ADMIN',
+        role: 'SUPER_ADMIN',
       },
     }),
     prisma.user.create({
       data: {
-        fullName: 'Police Officer',
+        name: 'Police Officer',
         email: 'police@example.com',
         password: await bcrypt.hash('Police@123', 10),
         role: 'POLICE',
-        policeStationId: stationRecords[0]?.id,
+        stationId: stationRecords[0]?.id,
       },
     }),
   ]);
