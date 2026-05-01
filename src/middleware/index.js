@@ -1,4 +1,6 @@
 module.exports = {
-	...require('./authMiddleware'),
-	...require('./errorHandler'),
+  ...require('./authMiddleware'),
+  ...require('./authorize'),
+  ...require('./errorHandler'),
+  ...require('./validation'),
 };

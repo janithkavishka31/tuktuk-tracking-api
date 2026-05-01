@@ -27,8 +27,22 @@ function buildLocationFilter({ tuktukId, provinceId, districtId, hours }) {
   return { where, since };
 }
 
-async function addLocation({ tuktukId, latitude, longitude, speed = 0, heading = 0, accuracy = 0, altitude = 0 }) {
-  if (!tuktukId || latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
+async function addLocation({
+  tuktukId,
+  latitude,
+  longitude,
+  speed = 0,
+  heading = 0,
+  accuracy = 0,
+  altitude = 0,
+}) {
+  if (
+    !tuktukId ||
+    latitude === null ||
+    latitude === undefined ||
+    longitude === null ||
+    longitude === undefined
+  ) {
     const error = new Error('tuktukId, latitude, and longitude are required');
     error.statusCode = 400;
     throw error;
@@ -36,7 +50,9 @@ async function addLocation({ tuktukId, latitude, longitude, speed = 0, heading =
 
   // Validate coordinates
   if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-    const error = new Error('Invalid coordinates: latitude must be -90 to 90, longitude -180 to 180');
+    const error = new Error(
+      'Invalid coordinates: latitude must be -90 to 90, longitude -180 to 180',
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -100,7 +116,14 @@ async function getLastLocationForTukTuk({ tuktukId, provinceId, districtId }) {
   return mapLocation(location);
 }
 
-async function getLocationHistory({ tuktukId, provinceId, districtId, hours = 24, page = 1, limit = 20 }) {
+async function getLocationHistory({
+  tuktukId,
+  provinceId,
+  districtId,
+  hours = 24,
+  page = 1,
+  limit = 20,
+}) {
   if (!tuktukId && !provinceId && !districtId) {
     const error = new Error('tuktukId, provinceId, or districtId is required');
     error.statusCode = 400;

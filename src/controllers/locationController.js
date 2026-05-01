@@ -37,14 +37,7 @@ async function getLastLocation(req, res) {
 
 async function getLocationHistory(req, res) {
   try {
-    const {
-      tuktukId,
-      provinceId,
-      districtId,
-      hours = 24,
-      page = 1,
-      limit = 20,
-    } = req.query;
+    const { tuktukId, provinceId, districtId, hours = 24, page = 1, limit = 20 } = req.query;
 
     const results = await locationService.getLocationHistory({
       tuktukId,

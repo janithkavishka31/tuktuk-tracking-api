@@ -6,11 +6,15 @@ const prisma = require('../config/prisma');
 const ALLOWED_ROLES = ['ADMIN', 'POLICE'];
 
 function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
+  return String(email || '')
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeRole(role) {
-  return String(role || '').trim().toUpperCase();
+  return String(role || '')
+    .trim()
+    .toUpperCase();
 }
 
 function getJwtSecret() {
@@ -30,6 +34,7 @@ function buildTokenPayload(user) {
     sub: user.id,
     email: user.email,
     role: user.role,
+    policeStationId: user.policeStationId || null,
   };
 }
 
@@ -39,12 +44,13 @@ function mapUser(user) {
     fullName: user.fullName,
     email: user.email,
     role: user.role,
+    policeStationId: user.policeStationId || null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
 }
 
-async function registerUser({ fullName, email, password, role }) {
+async function registerUser({ fullName, email, password, role, policeStationId }) {
   if (!fullName || !email || !password || !role) {
     const error = new Error('fullName, email, password, and role are required');
     error.statusCode = 400;
@@ -58,6 +64,29 @@ async function registerUser({ fullName, email, password, role }) {
     const error = new Error('role must be ADMIN or POLICE');
     error.statusCode = 400;
     throw error;
+  }
+
+  let normalizedPoliceStationId = null;
+
+  if (normalizedRole === 'POLICE') {
+    if (!policeStationId) {
+      const error = new Error('policeStationId is required for POLICE users');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const station = await prisma.policeStation.findUnique({
+      where: { id: String(policeStationId).trim() },
+      select: { id: true },
+    });
+
+    if (!station) {
+      const error = new Error('Police station not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    normalizedPoliceStationId = station.id;
   }
 
   const existingUser = await prisma.user.findUnique({
@@ -78,6 +107,7 @@ async function registerUser({ fullName, email, password, role }) {
       email: normalizedEmail,
       password: passwordHash,
       role: normalizedRole,
+      policeStationId: normalizedPoliceStationId,
     },
   });
 
@@ -100,6 +130,16 @@ async function loginUser({ email, password }) {
 
   const user = await prisma.user.findUnique({
     where: { email: normalizeEmail(email) },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      password: true,
+      role: true,
+      policeStationId: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
 
   if (!user) {

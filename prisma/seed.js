@@ -60,10 +60,12 @@ async function main() {
   await prisma.user.deleteMany();
 
   const provinceRecords = await Promise.all(
-    provinces.map((name) => prisma.province.create({ data: { name } }))
+    provinces.map((name) => prisma.province.create({ data: { name } })),
   );
 
-  const provinceMap = Object.fromEntries(provinceRecords.map((province) => [province.name, province]));
+  const provinceMap = Object.fromEntries(
+    provinceRecords.map((province) => [province.name, province]),
+  );
 
   const districtRecords = [];
 
@@ -124,6 +126,7 @@ async function main() {
         email: 'police@example.com',
         password: await bcrypt.hash('Police@123', 10),
         role: 'POLICE',
+        policeStationId: stationRecords[0]?.id,
       },
     }),
   ]);

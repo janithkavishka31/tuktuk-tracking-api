@@ -10,6 +10,7 @@ const statusRoutes = require('./src/routes/statusRoutes');
 const authRoutes = require('./src/routes/authRoutes');
 const tuktukRoutes = require('./src/routes/tuktukRoutes');
 const locationRoutes = require('./src/routes/locationRoutes');
+const policeStationRoutes = require('./src/routes/policeStationRoutes');
 const { notFoundHandler, errorHandler } = require('./src/middleware/errorHandler');
 
 const app = express();
@@ -23,6 +24,7 @@ app.use('/api', statusRoutes);
 app.use('/auth', authRoutes);
 app.use('/tuktuks', tuktukRoutes);
 app.use('/locations', locationRoutes);
+app.use('/policestations', policeStationRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

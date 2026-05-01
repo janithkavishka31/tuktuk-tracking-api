@@ -17,12 +17,7 @@ async function createTukTuk(req, res) {
 
 async function getAllTukTuks(req, res) {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      provinceId,
-      districtId,
-    } = req.query;
+    const { page = 1, limit = 20, provinceId, districtId } = req.query;
 
     const results = await tuktukService.getAllTukTuks({
       page,
