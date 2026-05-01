@@ -1,5 +1,31 @@
 const prisma = require('../config/prisma');
 
+function parsePositiveInt(value, fallback) {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildTrackingFilter({ provinceId, districtId }) {
+  const where = {};
+
+  if (provinceId) {
+    where.policeStation = {
+      district: {
+        provinceId,
+      },
+    };
+  }
+
+  if (districtId) {
+    where.policeStation = {
+      ...(where.policeStation || {}),
+      districtId,
+    };
+  }
+
+  return where;
+}
+
 async function createTukTuk({ registrationNo, policeStationId }) {
   if (!registrationNo || !policeStationId) {
     const error = new Error('registrationNo and policeStationId are required');
@@ -50,29 +76,46 @@ async function createTukTuk({ registrationNo, policeStationId }) {
   return mapTukTuk(tukTuk);
 }
 
-async function getAllTukTuks({ skip = 0, take = 50 } = {}) {
-  const tuktuks = await prisma.tukTuk.findMany({
-    skip: parseInt(skip),
-    take: Math.min(parseInt(take), 100),
-    include: {
-      policeStation: {
-        include: {
-          district: {
-            include: {
-              province: true,
+async function getAllTukTuks({ page = 1, limit = 20, provinceId, districtId } = {}) {
+  const currentPage = parsePositiveInt(page, 1);
+  const pageSize = Math.min(parsePositiveInt(limit, 20), 100);
+  const skip = (currentPage - 1) * pageSize;
+  const where = buildTrackingFilter({ provinceId, districtId });
+
+  const [total, tuktuks] = await Promise.all([
+    prisma.tukTuk.count({ where }),
+    prisma.tukTuk.findMany({
+      where,
+      skip,
+      take: pageSize,
+      include: {
+        policeStation: {
+          include: {
+            district: {
+              include: {
+                province: true,
+              },
             },
           },
         },
+        locations: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
-      locations: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
 
-  return tuktuks.map(mapTukTuk);
+  return {
+    data: tuktuks.map(mapTukTuk),
+    meta: {
+      page: currentPage,
+      limit: pageSize,
+      total,
+      totalPages: Math.max(Math.ceil(total / pageSize), 1),
+    },
+  };
 }
 
 async function getTukTukById(id) {

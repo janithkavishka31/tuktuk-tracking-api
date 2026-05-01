@@ -17,8 +17,19 @@ async function createTukTuk(req, res) {
 
 async function getAllTukTuks(req, res) {
   try {
-    const { skip = 0, take = 50 } = req.query;
-    const results = await tuktukService.getAllTukTuks({ skip, take });
+    const {
+      page = 1,
+      limit = 20,
+      provinceId,
+      districtId,
+    } = req.query;
+
+    const results = await tuktukService.getAllTukTuks({
+      page,
+      limit,
+      provinceId,
+      districtId,
+    });
     return res.status(200).json({
       message: 'TukTuks retrieved successfully',
       data: results,
