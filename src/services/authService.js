@@ -76,8 +76,30 @@ async function loginUser({ email, password }) {
   };
 }
 
+async function logoutUser(token) {
+  if (!token) {
+    const error = new Error('token is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  try {
+    const { blacklistToken } = require('../utils/tokenBlacklist');
+    blacklistToken(token);
+
+    return {
+      message: 'Logout successful',
+    };
+  } catch (error) {
+    const err = new Error('Failed to logout');
+    err.statusCode = 500;
+    throw err;
+  }
+}
+
 module.exports = {
   buildTokenPayload,
   loginUser,
+  logoutUser,
   mapPublicUser,
 };

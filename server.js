@@ -18,6 +18,14 @@ const { notFoundHandler, errorHandler } = require('./src/middleware/errorHandler
 
 const app = express();
 
+// Initialize token blacklist cleanup
+const { startCleanupInterval } = require('./src/utils/tokenBlacklist');
+startCleanupInterval();
+
+// Swagger UI
+const { swaggerUi, swaggerSpec } = require('./src/config/swagger');
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 if (!process.env.JWT_SECRET) {
   console.warn('Warning: JWT_SECRET is not set. Authentication will fail until it is configured.');
 }

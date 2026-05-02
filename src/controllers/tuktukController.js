@@ -36,6 +36,37 @@ async function getAllTukTuks(req, res) {
   }
 }
 
+async function getFilteredTukTuks(req, res) {
+  try {
+    const {
+      provinceId,
+      districtId,
+      policeStationId,
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    const results = await tuktukService.getFilteredTukTuks(req.user, {
+      provinceId,
+      districtId,
+      policeStationId,
+      page,
+      limit,
+    });
+
+    return res.status(200).json({
+      message: 'Filtered TukTuks retrieved successfully',
+      data: results.data,
+      meta: results.meta,
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      message: error.message || 'Failed to retrieve filtered TukTuks',
+    });
+  }
+}
+
 async function getTukTukById(req, res) {
   try {
     const { id } = req.params;
@@ -86,6 +117,7 @@ module.exports = {
   createTukTuk,
   deleteTukTuk,
   getAllTukTuks,
+  getFilteredTukTuks,
   getTukTukById,
   updateTukTuk,
 };
