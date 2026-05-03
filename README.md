@@ -156,3 +156,7 @@ Full detail: open **Swagger** at `/api-docs` or inspect route files under `src/r
 ## License
 
 ISC
+
+## Super_Admin login credentials are provided for testing
+email - nimal@example.com
+password - 12345678
