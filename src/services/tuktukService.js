@@ -148,6 +148,124 @@ async function getAllTukTuks(user, { page = 1, limit = 20 } = {}) {
   };
 }
 
+async function getFilteredTukTuks(
+  user,
+  {
+    provinceId,
+    districtId,
+    policeStationId,
+    page = 1,
+    limit = 20,
+  } = {},
+) {
+  const currentPage = parsePositiveInt(page, 1);
+  const pageSize = Math.min(parsePositiveInt(limit, 20), 100);
+  const skip = (currentPage - 1) * pageSize;
+
+  if (user.role === 'PROVINCE_ADMIN' && provinceId && provinceId !== user.provinceId) {
+    const error = new Error('Forbidden: provinceId is outside your scope');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (user.role === 'PROVINCE_ADMIN' && districtId) {
+    const district = await prisma.district.findUnique({
+      where: { id: districtId },
+    });
+    if (!district) {
+      const error = new Error('District not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    if (district.provinceId !== user.provinceId) {
+      const error = new Error('Forbidden: districtId is outside your province scope');
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+
+  if (user.role === 'DISTRICT_ADMIN' && districtId && districtId !== user.districtId) {
+    const error = new Error('Forbidden: districtId is outside your scope');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (policeStationId) {
+    const station = await findPoliceStationInScope(user, policeStationId);
+    if (!station) {
+      const error = new Error('Police station not found or outside your scope');
+      error.statusCode = 404;
+      throw error;
+    }
+  }
+
+  const extraWhere = {};
+
+  if (policeStationId) {
+    extraWhere.policeStationId = policeStationId;
+  }
+
+  if (districtId) {
+    extraWhere.policeStation = {
+      ...(extraWhere.policeStation || {}),
+      districtId,
+    };
+  }
+
+  if (provinceId) {
+    extraWhere.policeStation = {
+      ...(extraWhere.policeStation || {}),
+      district: {
+        ...(extraWhere.policeStation?.district || {}),
+        provinceId,
+      },
+    };
+  }
+
+  const scopeWhere = tukTukWhereForUser(user);
+  const where = andWhere(scopeWhere, extraWhere);
+
+  const [total, tuktuks] = await Promise.all([
+    prisma.tukTuk.count({ where }),
+    prisma.tukTuk.findMany({
+      where,
+      skip,
+      take: pageSize,
+      include: {
+        policeStation: {
+          include: {
+            district: {
+              include: {
+                province: true,
+              },
+            },
+          },
+        },
+        locations: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
+
+  return {
+    data: tuktuks.map(mapTukTuk),
+    meta: {
+      page: currentPage,
+      limit: pageSize,
+      total,
+      totalPages: Math.max(Math.ceil(total / pageSize), 1),
+      filters: {
+        provinceId: provinceId || null,
+        districtId: districtId || null,
+        policeStationId: policeStationId || null,
+      },
+    },
+  };
+}
+
 async function getTukTukById(user, id) {
   const tukTuk = await assertTukTukInScope(user, id);
   return mapTukTuk(tukTuk);
@@ -226,20 +344,20 @@ async function deleteTukTuk(user, id) {
 }
 
 function mapTukTuk(tukTuk) {
-  const lastLocation = tuktTuk.locations?.[0] || null;
+  const lastLocation = tukTuk.locations?.[0] || null;
 
   return {
     id: tukTuk.id,
     registrationNo: tukTuk.registrationNo,
-    policeStation: tuktTuk.policeStation
+    policeStation: tukTuk.policeStation
       ? {
           id: tukTuk.policeStation.id,
           name: tukTuk.policeStation.name,
-          district: tuktTuk.policeStation.district
+          district: tukTuk.policeStation.district
             ? {
                 id: tukTuk.policeStation.district.id,
                 name: tukTuk.policeStation.district.name,
-                province: tuktTuk.policeStation.district.province
+                province: tukTuk.policeStation.district.province
                   ? {
                       id: tukTuk.policeStation.district.province.id,
                       name: tukTuk.policeStation.district.province.name,
@@ -270,6 +388,7 @@ module.exports = {
   createTukTuk,
   deleteTukTuk,
   getAllTukTuks,
+  getFilteredTukTuks,
   getTukTukById,
   mapTukTuk,
   updateTukTuk,

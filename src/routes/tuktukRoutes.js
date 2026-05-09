@@ -37,6 +37,15 @@ const getAllTukTuksValidator = [
   validateRequest,
 ];
 
+const filterTukTuksValidator = [
+  query('provinceId').optional().trim().notEmpty().withMessage('provinceId cannot be empty'),
+  query('districtId').optional().trim().notEmpty().withMessage('districtId cannot be empty'),
+  query('policeStationId').optional().trim().notEmpty().withMessage('policeStationId cannot be empty'),
+  query('page').optional().isInt({ min: 1 }).withMessage('page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be 1-100'),
+  validateRequest,
+];
+
 const idParamValidator = [param('id').trim().notEmpty().withMessage('id is required'), validateRequest];
 
 const readRoles = [
@@ -58,6 +67,14 @@ router.post(
 );
 
 router.get('/', authenticateToken, authorizeRoles(...readRoles), getAllTukTuksValidator, tuktukController.getAllTukTuks);
+
+router.get(
+  '/filters',
+  authenticateToken,
+  authorizeRoles('SUPER_ADMIN', 'PROVINCE_ADMIN', 'DISTRICT_ADMIN'),
+  filterTukTuksValidator,
+  tuktukController.getFilteredTukTuks,
+);
 
 router.get('/:id', idParamValidator, authenticateToken, authorizeRoles(...readRoles), tuktukController.getTukTukById);
 

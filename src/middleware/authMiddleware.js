@@ -15,6 +15,12 @@ function authenticateToken(req, res, next) {
       return res.status(500).json({ message: 'JWT_SECRET is not configured' });
     }
 
+    // Check if token is blacklisted (logout)
+    const { isTokenBlacklisted } = require('../utils/tokenBlacklist');
+    if (isTokenBlacklisted(token)) {
+      return res.status(401).json({ message: 'Token has been revoked' });
+    }
+
     const decoded = jwt.verify(token, secret);
 
     req.user = {

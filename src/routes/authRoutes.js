@@ -17,5 +17,6 @@ const loginValidator = [
 
 router.post('/login', loginValidator, authController.login);
 router.get('/me', authenticateToken, authController.me);
+router.post('/logout', authenticateToken, authController.logout);
 
 module.exports = router;
